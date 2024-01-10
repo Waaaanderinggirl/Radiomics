@@ -1,0 +1,95 @@
+from __future__ import print_function
+import six
+import os  # needed navigate the system to get the input data
+import numpy as np
+import radiomics
+import pandas as pd
+import SimpleITK as sitk
+from radiomics import featureextractor  # This module is used for interaction with pyradiomics
+import glob
+import json
+
+def catch_features(imagePath,maskPath):
+    if imagePath is None or maskPath is None:  # Something went wrong, in this case PyRadiomics will also log an error
+        raise Exception('Error getting testcase!')  # Raise exception to prevent cells below from running in case of "run all"
+    settings = {}
+    settings['binWidth'] = 8 #(533-791)(10-100)
+    # settings['sigma'] = [2.0, 3.0, 4.0, 5.0]
+    settings['Interpolator'] = sitk.sitkBSpline
+    settings['resampledPixelSpacing'] = None # [2, 2, 2]
+    settings['voxelArrayShift'] = 300
+    settings['normalize'] = True
+    settings['normalizeScale'] = 100
+    settings['geometryTolerance'] = 1000000000000 # 1e-16
+    settings['correctMask'] = True
+    settings['label'] = [1, 2, 3, 4] # pretty sure I had 5 labels
+    extractor = featureextractor.RadiomicsFeatureExtractor(**settings)
+    #extractor = featureextractor.RadiomicsFeatureExtractor()
+    #print('Extraction parameters:\n\t', extractor.settings)
+
+    extractor.enableImageTypes(Original={}, LoG={}, Wavelet={})
+    extractor.enableImageTypeByName('LoG')
+    extractor.enableImageTypeByName('Wavelet')
+    extractor.enableAllFeatures()
+    extractor.enableFeaturesByName(firstorder=['Energy', 'TotalEnergy', 'Entropy', 'Minimum', '10Percentile', '90Percentile', 'Maximum', 'Mean', 'Median', 'InterquartileRange', 'Range', 'MeanAbsoluteDeviation', 'RobustMeanAbsoluteDeviation', 'RootMeanSquared', 'StandardDeviation', 'Skewness', 'Kurtosis', 'Variance', 'Uniformity'])
+    extractor.enableFeaturesByName(shape=['VoxelVolume', 'MeshVolume', 'SurfaceArea', 'SurfaceVolumeRatio', 'Compactness1', 'Compactness2', 'Sphericity', 'SphericalDisproportion','Maximum3DDiameter','Maximum2DDiameterSlice','Maximum2DDiameterColumn','Maximum2DDiameterRow', 'MajorAxisLength', 'MinorAxisLength', 'LeastAxisLength', 'Elongation', 'Flatness'])
+    # print('Enabled filters:\n\t', extractor.enabledImagetypes)
+    feature_cur = []
+    feature_name = []
+
+    result = extractor.execute(imagePath, maskPath, label=2)
+    for key, value in six.iteritems(result):
+        print('\t', key, ':', value)
+        feature_name.append(key)
+        feature_cur.append(value)
+    print(len(feature_cur[37:]))
+    name = feature_name[37:]
+    name = np.array(name)
+    '''
+    flag=1
+    if flag:
+        name = np.array(feature_name)
+        name_df = pd.DataFrame(name)
+        writer = pd.ExcelWriter('key.xlsx')
+        name_df.to_excel(writer)
+        writer.save()
+        flag = 0
+    '''
+    # for i in range(len(feature_cur[37:])):
+    #     #if type(feature_cur[i+22]) != type(feature_cur[30]):
+    #     feature_cur[i+37] = float(feature_cur[i+37])
+    # return feature_cur[37:],name
+
+    for j in range(len(feature_cur[37:])):
+        #if type(feature_cur[i+22]) != type(feature_cur[30]):
+        feature_cur[j+37] = float(feature_cur[j+37])
+    return feature_cur[37:],name
+
+image_dir = f'/sda/Eva/Dataset/OAI_model/development/control'
+mask_dir = f'/sda/Eva/Dataset/radiomics/label'
+patient_list = os.listdir(image_dir)
+save_file = np.empty(shape=[1,848]) #[1,1051]
+id = []
+for patient in patient_list:
+    print(patient)
+    imagePath = os.path.join(image_dir, patient)
+    maskPath = os.path.join(mask_dir, patient)
+    print(imagePath)
+    print(maskPath)
+    save_curdata,name = catch_features(imagePath,maskPath)
+    save_curdata = np.array(save_curdata)
+    save_curdata = save_curdata.reshape([1, 848])
+    id.append(patient.split('.')[0])
+    # np.concatenate((patient, save_curdata), axis=1)
+    save_file = np.append(save_file, save_curdata, axis=0)
+    print(save_file.shape)
+
+save_file = np.delete(save_file,0,0)
+#save_file = save_file.transpose()
+#print(save_file.shape)
+id_num = len(id)
+id = np.array(id)
+name_df = pd.DataFrame(save_file)
+name_df.index = id
+name_df.columns = name
+name_df.to_csv("Deve_control_all_label2.csv")
